@@ -229,6 +229,91 @@ struct InlineParserTests {
         ])
     }
 
+    // MARK: - Underline
+
+    @Test("underline, content recursively parsed")
+    func underline() {
+        #expect(InlineParser.parse("++x++") == [
+            .underline(range: r(0, 5), markers: [r(0, 2), r(3, 2)], children: [.text(r(2, 1))]),
+        ])
+    }
+
+    @Test("triple plus signs do not underline")
+    func triplePlusNotUnderline() {
+        #expect(InlineParser.parse("+++x+++") == [.text(r(0, 7))])
+    }
+
+    @Test("underline wraps emphasis")
+    func underlineWrapsEmphasis() {
+        #expect(InlineParser.parse("++*x*++") == [
+            .underline(range: r(0, 7), markers: [r(0, 2), r(5, 2)], children: [
+                .emphasis(.italic, range: r(2, 3), markers: [r(2, 1), r(4, 1)], children: [.text(r(3, 1))]),
+            ]),
+        ])
+    }
+
+    @Test("<u>text</u> produces an underline node")
+    func htmlUnderlineTag() {
+        #expect(InlineParser.parse("<u>x</u>") == [
+            .underline(range: r(0, 8), markers: [r(0, 3), r(4, 4)], children: [.text(r(3, 1))]),
+        ])
+    }
+
+    @Test("<u> and </u> markers have the correct lengths")
+    func htmlUnderlineMarkerLengths() {
+        // open marker "<u>" is 3 chars, close marker "</u>" is 4 chars
+        #expect(InlineParser.parse("<u>hello</u>") == [
+            .underline(range: r(0, 12), markers: [r(0, 3), r(8, 4)], children: [.text(r(3, 5))]),
+        ])
+    }
+
+    @Test("<u> tag containing emphasis")
+    func htmlUnderlineWrapsEmphasis() {
+        #expect(InlineParser.parse("<u>*x*</u>") == [
+            .underline(range: r(0, 10), markers: [r(0, 3), r(6, 4)], children: [
+                .emphasis(.italic, range: r(3, 3), markers: [r(3, 1), r(5, 1)], children: [.text(r(4, 1))]),
+            ]),
+        ])
+    }
+
+    // MARK: - Subscript
+
+    @Test("subscript: H~2~O")
+    func subscriptBasic() {
+        #expect(InlineParser.parse("H~2~O") == [
+            .text(r(0, 1)),
+            .`subscript`(range: r(1, 3), markers: [r(1, 1), r(3, 1)], children: [.text(r(2, 1))]),
+            .text(r(4, 1)),
+        ])
+    }
+
+    @Test("double tilde is strikethrough, not subscript")
+    func doubleTildeNotSubscript() {
+        #expect(InlineParser.parse("~~x~~") == [
+            .strikethrough(range: r(0, 5), markers: [r(0, 2), r(3, 2)], children: [.text(r(2, 1))]),
+        ])
+    }
+
+    @Test("unclosed single tilde stays literal")
+    func unclosedTildeLiteral() {
+        #expect(InlineParser.parse("~x") == [.text(r(0, 2))])
+    }
+
+    // MARK: - Superscript
+
+    @Test("superscript: X^2^")
+    func superscriptBasic() {
+        #expect(InlineParser.parse("X^2^") == [
+            .text(r(0, 1)),
+            .superscript(range: r(1, 3), markers: [r(1, 1), r(3, 1)], children: [.text(r(2, 1))]),
+        ])
+    }
+
+    @Test("unclosed caret stays literal")
+    func unclosedCaretLiteral() {
+        #expect(InlineParser.parse("X^2") == [.text(r(0, 3))])
+    }
+
     // MARK: - Backslash escapes
 
     @Test("escaped punctuation becomes an escape node")

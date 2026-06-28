@@ -88,7 +88,8 @@ enum MarkdownASTStyler {
                 switch node {
                 case .code(let range, _): ranges.append(range)
                 case .emphasis(_, _, _, let children), .strikethrough(_, _, let children),
-                     .link(_, _, _, _, let children): walk(children)
+                     .underline(_, _, let children), .`subscript`(_, _, let children),
+                     .superscript(_, _, let children), .link(_, _, _, _, let children): walk(children)
                 default: break
                 }
             }
@@ -432,6 +433,29 @@ enum MarkdownASTStyler {
                 ]))
                 styleInlines(children, font: font, ctx: ctx, into: &attrs)
 
+            case .underline(_, let markers, let children):
+                attrs.append((content(of: markers), [
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .underlineColor: ctx.theme.strikethroughColor,
+                ]))
+                styleInlines(children, font: font, ctx: ctx, into: &attrs)
+
+            case .`subscript`(_, let markers, let children):
+                let subFont = NSFont(descriptor: font.fontDescriptor, size: font.pointSize * 0.65) ?? font
+                attrs.append((content(of: markers), [
+                    .font: subFont,
+                    .baselineOffset: -font.pointSize * 0.15,
+                ]))
+                styleInlines(children, font: subFont, ctx: ctx, into: &attrs)
+
+            case .superscript(_, let markers, let children):
+                let supFont = NSFont(descriptor: font.fontDescriptor, size: font.pointSize * 0.65) ?? font
+                attrs.append((content(of: markers), [
+                    .font: supFont,
+                    .baselineOffset: font.pointSize * 0.35,
+                ]))
+                styleInlines(children, font: supFont, ctx: ctx, into: &attrs)
+
             case .code(let range, let contentRange):
                 attrs.append((contentRange, [.font: ctx.codeFont, .backgroundColor: ctx.codeBackground]))
                 // Suppress spell-check underlines on inline `code` spans (markers + content).
@@ -529,6 +553,18 @@ enum MarkdownASTStyler {
                 if !active { shrink(markers, ctx: ctx, into: &attrs) }
                 shrinkInlineMarkers(children, ctx: ctx, forceReveal: active, into: &attrs)
             case .strikethrough(let range, let markers, let children):
+                let active = forceReveal || ctx.isActive(range)
+                if !active { shrink(markers, ctx: ctx, into: &attrs) }
+                shrinkInlineMarkers(children, ctx: ctx, forceReveal: active, into: &attrs)
+            case .underline(let range, let markers, let children):
+                let active = forceReveal || ctx.isActive(range)
+                if !active { shrink(markers, ctx: ctx, into: &attrs) }
+                shrinkInlineMarkers(children, ctx: ctx, forceReveal: active, into: &attrs)
+            case .`subscript`(let range, let markers, let children):
+                let active = forceReveal || ctx.isActive(range)
+                if !active { shrink(markers, ctx: ctx, into: &attrs) }
+                shrinkInlineMarkers(children, ctx: ctx, forceReveal: active, into: &attrs)
+            case .superscript(let range, let markers, let children):
                 let active = forceReveal || ctx.isActive(range)
                 if !active { shrink(markers, ctx: ctx, into: &attrs) }
                 shrinkInlineMarkers(children, ctx: ctx, forceReveal: active, into: &attrs)

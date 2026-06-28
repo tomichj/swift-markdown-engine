@@ -230,6 +230,31 @@ extension MarkdownStyler {
                         .strikethroughColor: theme.bodyText
                     ], range: NSRange(location: start, length: out.length - start))
                 }
+            case .underline(_, _, let children):
+                let start = out.length
+                recurse(children, font)
+                if out.length > start {
+                    out.addAttributes([
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
+                        .underlineColor: theme.bodyText
+                    ], range: NSRange(location: start, length: out.length - start))
+                }
+            case .`subscript`(_, _, let children):
+                let subFont = NSFont(descriptor: baseDescriptor, size: pointSize * 0.65) ?? font
+                let start = out.length
+                recurse(children, subFont)
+                if out.length > start {
+                    out.addAttributes([.baselineOffset: -pointSize * 0.15],
+                                      range: NSRange(location: start, length: out.length - start))
+                }
+            case .superscript(_, _, let children):
+                let supFont = NSFont(descriptor: baseDescriptor, size: pointSize * 0.65) ?? font
+                let start = out.length
+                recurse(children, supFont)
+                if out.length > start {
+                    out.addAttributes([.baselineOffset: pointSize * 0.35],
+                                      range: NSRange(location: start, length: out.length - start))
+                }
             case .code(_, let content):
                 out.append(NSAttributedString(string: ns.substring(with: content), attributes: [
                     .font: codeFont, .backgroundColor: codeBackgroundColor, .foregroundColor: theme.bodyText

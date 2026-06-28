@@ -31,6 +31,9 @@ enum MarkdownTokenKind {
     case imageEmbed
     case imageLink
     case strikethrough
+    case underline
+    case `subscript`
+    case superscript
     case table
     /// A CommonMark backslash escape; marker is the `\`, content the escaped literal char.
     case backslashEscape

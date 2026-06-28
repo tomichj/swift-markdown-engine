@@ -49,6 +49,12 @@ indirect enum InlineNode: Equatable {
     case imageEmbed(range: NSRange, target: NSRange, markers: [NSRange])
     /// `~~text~~`. `markers` is `[openMarker, closeMarker]`; content recursively parsed.
     case strikethrough(range: NSRange, markers: [NSRange], children: [InlineNode])
+    /// `++text++`. `markers` is `[openMarker, closeMarker]`; content recursively parsed.
+    case underline(range: NSRange, markers: [NSRange], children: [InlineNode])
+    /// `~text~`. `markers` is `[openMarker, closeMarker]`; content recursively parsed.
+    case `subscript`(range: NSRange, markers: [NSRange], children: [InlineNode])
+    /// `^text^`. `markers` is `[openMarker, closeMarker]`; content recursively parsed.
+    case superscript(range: NSRange, markers: [NSRange], children: [InlineNode])
     /// `$math$` — opaque. `markers` is `[ "$", "$" ]`.
     case inlineLatex(range: NSRange, content: NSRange, markers: [NSRange])
     /// Backslash escape `\x`; `marker` is the `\`, `character` the now-literal punctuation.
@@ -70,6 +76,10 @@ enum InlineParser {
     private static let backslash: unichar = 0x5C
     private static let tilde: unichar = 0x7E
     private static let dollar: unichar = 0x24
+    private static let plus: unichar = 0x2B
+    private static let lt: unichar = 0x3C      // <
+    private static let slash: unichar = 0x2F   // /
+    private static let caret: unichar = 0x5E   // ^
 
     // MARK: - Entry point
 
@@ -100,6 +110,9 @@ enum InlineParser {
         case wikiLink(range: NSRange, name: NSRange, id: NSRange?, markers: [NSRange])
         case imageEmbed(range: NSRange, target: NSRange, markers: [NSRange])
         case strikethrough(range: NSRange, contentRange: NSRange, markers: [NSRange])
+        case underline(range: NSRange, contentRange: NSRange, markers: [NSRange])
+        case `subscript`(range: NSRange, contentRange: NSRange, markers: [NSRange])
+        case superscript(range: NSRange, contentRange: NSRange, markers: [NSRange])
         case inlineLatex(range: NSRange, content: NSRange, markers: [NSRange])
         case escape(range: NSRange, character: NSRange, marker: NSRange)
 
@@ -107,7 +120,9 @@ enum InlineParser {
             switch self {
             case .code(let r, _), .emphasis(_, let r, _, _), .link(let r, _, _, _),
                  .image(let r, _, _, _), .wikiLink(let r, _, _, _), .imageEmbed(let r, _, _),
-                 .strikethrough(let r, _, _), .inlineLatex(let r, _, _), .escape(let r, _, _):
+                 .strikethrough(let r, _, _), .underline(let r, _, _),
+                 .`subscript`(let r, _, _), .superscript(let r, _, _),
+                 .inlineLatex(let r, _, _), .escape(let r, _, _):
                 return r
             }
         }
@@ -216,6 +231,10 @@ enum InlineParser {
         if c == bang, c1 == lbracket { return matchImage(ns, len, start: i) }
         if c == lbracket { return matchLink(ns, len, start: i) }
         if c == tilde, c1 == tilde { return matchStrikethrough(ns, len, start: i) }
+        if c == tilde, c1 != tilde { return matchSubscript(ns, len, start: i) }
+        if c == plus, c1 == plus { return matchUnderline(ns, len, start: i) }
+        if c == lt, c1 == 0x75 /* u */, c2 == 0x3E /* > */ { return matchHtmlUnderline(ns, len, start: i) }
+        if c == caret { return matchSuperscript(ns, len, start: i) }
         if c == dollar, c1 != dollar { return matchInlineLatex(ns, len, start: i) }
         return nil
     }
@@ -324,6 +343,91 @@ enum InlineParser {
                 )
             }
             k += 1
+        }
+        return nil
+    }
+
+    /// `~ text ~` — subscript; not part of a `~~` run.
+    private static func matchSubscript(_ ns: NSString, _ len: Int, start i: Int) -> Span? {
+        if i > 0, ns.character(at: i - 1) == tilde { return nil }
+        let contentStart = i + 1
+        var k = contentStart
+        while k < len {
+            let ch = ns.character(at: k)
+            if ch == newline { return nil }
+            if ch == tilde {
+                guard k > contentStart else { return nil }
+                guard peek(ns, k + 1, len) != tilde else { return nil }
+                return .`subscript`(
+                    range: NSRange(location: i, length: (k + 1) - i),
+                    contentRange: NSRange(location: contentStart, length: k - contentStart),
+                    markers: [NSRange(location: i, length: 1), NSRange(location: k, length: 1)]
+                )
+            }
+            k += 1
+        }
+        return nil
+    }
+
+    /// `^ text ^` — superscript.
+    private static func matchSuperscript(_ ns: NSString, _ len: Int, start i: Int) -> Span? {
+        let contentStart = i + 1
+        var k = contentStart
+        while k < len {
+            let ch = ns.character(at: k)
+            if ch == newline { return nil }
+            if ch == caret {
+                guard k > contentStart else { return nil }
+                return .superscript(
+                    range: NSRange(location: i, length: (k + 1) - i),
+                    contentRange: NSRange(location: contentStart, length: k - contentStart),
+                    markers: [NSRange(location: i, length: 1), NSRange(location: k, length: 1)]
+                )
+            }
+            k += 1
+        }
+        return nil
+    }
+
+    /// `++ text ++` — text has no `+`; not part of a longer `+` run.
+    private static func matchUnderline(_ ns: NSString, _ len: Int, start i: Int) -> Span? {
+        if i > 0, ns.character(at: i - 1) == plus { return nil }
+        let contentStart = i + 2
+        var k = contentStart
+        while k < len {
+            let ch = ns.character(at: k)
+            if ch == newline { return nil }
+            if ch == plus {
+                guard peek(ns, k + 1, len) == plus else { return nil }
+                guard k > contentStart, peek(ns, k + 2, len) != plus else { return nil }
+                return .underline(
+                    range: NSRange(location: i, length: (k + 2) - i),
+                    contentRange: NSRange(location: contentStart, length: k - contentStart),
+                    markers: [NSRange(location: i, length: 2), NSRange(location: k, length: 2)]
+                )
+            }
+            k += 1
+        }
+        return nil
+    }
+
+    /// `<u>text</u>` — HTML underline tag; content recursively parsed.
+    private static func matchHtmlUnderline(_ ns: NSString, _ len: Int, start i: Int) -> Span? {
+        // Caller verified ns[i]=='<', ns[i+1]=='u', ns[i+2]=='>'
+        let contentStart = i + 3
+        var k = contentStart
+        while k < len {
+            guard ns.character(at: k) == lt else { k += 1; continue }
+            guard peek(ns, k + 1, len) == slash,
+                  peek(ns, k + 2, len) == 0x75,   // u
+                  peek(ns, k + 3, len) == 0x3E    // >
+            else { k += 1; continue }
+            guard k > contentStart else { return nil }
+            return .underline(
+                range: NSRange(location: i, length: (k + 4) - i),
+                contentRange: NSRange(location: contentStart, length: k - contentStart),
+                markers: [NSRange(location: i, length: 3), NSRange(location: k, length: 4)]
+            )
         }
         return nil
     }
@@ -592,6 +696,15 @@ enum InlineParser {
             case .strikethrough(let range, let contentRange, let markers):
                 result.append(.strikethrough(range: range, markers: markers,
                                              children: reparse(contentRange, ns: ns)))
+            case .underline(let range, let contentRange, let markers):
+                result.append(.underline(range: range, markers: markers,
+                                         children: reparse(contentRange, ns: ns)))
+            case .`subscript`(let range, let contentRange, let markers):
+                result.append(.`subscript`(range: range, markers: markers,
+                                           children: reparse(contentRange, ns: ns)))
+            case .superscript(let range, let contentRange, let markers):
+                result.append(.superscript(range: range, markers: markers,
+                                           children: reparse(contentRange, ns: ns)))
             case .inlineLatex(let range, let content, let markers):
                 result.append(.inlineLatex(range: range, content: content, markers: markers))
             case .escape(let range, let character, let marker):
@@ -627,6 +740,9 @@ enum InlineParser {
         case .wikiLink(let r, let n, let id, let m): return .wikiLink(range: s(r), name: s(n), id: id.map(s), markers: m.map(s))
         case .imageEmbed(let r, let t, let m): return .imageEmbed(range: s(r), target: s(t), markers: m.map(s))
         case .strikethrough(let r, let m, let ch): return .strikethrough(range: s(r), markers: m.map(s), children: offsetNodes(ch, by: d))
+        case .underline(let r, let m, let ch): return .underline(range: s(r), markers: m.map(s), children: offsetNodes(ch, by: d))
+        case .`subscript`(let r, let m, let ch): return .`subscript`(range: s(r), markers: m.map(s), children: offsetNodes(ch, by: d))
+        case .superscript(let r, let m, let ch): return .superscript(range: s(r), markers: m.map(s), children: offsetNodes(ch, by: d))
         case .inlineLatex(let r, let c, let m): return .inlineLatex(range: s(r), content: s(c), markers: m.map(s))
         case .escape(let r, let c, let m): return .escape(range: s(r), character: s(c), marker: s(m))
         }
